@@ -30,7 +30,7 @@ jobs:
           
       - name: Add to tree
         run: |
-          mv -n target/release/libreddit ../../libreddit
+          mv -n target/release/libreddit libreddit
           git config user.name dothq-robot
           git config user.email ghbot@dothq.co
           git add .
