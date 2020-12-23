@@ -1,0 +1,35 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Download latest libreddit binary
+
+# Controls when the action will run. 
+on:
+  schedule:
+    - cron: 0 0 * * *
+
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+
+      # Runs a single command using the runners shell
+      - name: Download libreddit
+        run: curl https://github.com/spikecodes/libreddit/releases/download/$(curl -s https://api.github.com/repos/spikecodes/libreddit/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')/libreddit -o /home/runner/work/libreddit/libreddit/libreddit
+
+      # Runs a set of commands using the runners shell
+      - name: Upload
+        run: |
+          git config user.name dothq-robot
+          git config user.email ghbot@dothq.co
+          git add .
+          git commit -m "Update libreddit to $(curl -s https://api.github.com/repos/spikecodes/libreddit/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')"
+          git push origin master
