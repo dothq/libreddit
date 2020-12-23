@@ -27,3 +27,11 @@ jobs:
         with:
           name: libreddit
           path: target/release/libreddit
+          
+      - name: Add to tree
+        run: |
+          git config user.name dothq-robot
+          git config user.email ghbot@dothq.co
+          git add .
+          git commit -m "Update libreddit"
+          git push origin master
