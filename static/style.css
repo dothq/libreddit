@@ -1,7 +1,7 @@
 /* General */
 
 :root {
-	--accent: aqua;
+	--accent: #0268CA;
 	--background: #0F0F0F;
 	--foreground: #222;
 	--outside: #1F1F1F;
@@ -14,7 +14,7 @@
 	transition: 0.2s all;
 	margin: 0px;
 	color: white;
-	font-family: sans-serif;
+	font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 	font-weight: normal;
 	outline: none;
 }
