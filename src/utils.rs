@@ -46,6 +46,7 @@ pub struct User {
 	pub name: String,
 	pub icon: String,
 	pub karma: i64,
+	pub created: String,
 	pub banner: String,
 	pub description: String,
 }
@@ -79,7 +80,12 @@ pub struct ErrorTemplate {
 // FORMATTING
 //
 
-pub async fn format_url(url: &str) -> String {
+// Direct urls to proxy if proxy is enabled
+pub async fn format_url(url: String) -> String {
+	if url.is_empty() {
+		return String::new();
+	};
+
 	#[cfg(feature = "proxy")]
 	return "/proxy/".to_string() + encode(url).as_str();
 
@@ -87,6 +93,7 @@ pub async fn format_url(url: &str) -> String {
 	return url.to_string();
 }
 
+// Append `m` and `k` for millions and thousands respectively
 pub fn format_num(num: i64) -> String {
 	if num > 1000000 {
 		format!("{}m", num / 1000000)
@@ -111,6 +118,7 @@ pub async fn nested_val(j: &serde_json::Value, n: &str, k: &str) -> String {
 	String::from(j["data"][n][k].as_str().unwrap())
 }
 
+// Fetch posts of a user or subreddit
 pub async fn fetch_posts(url: String, fallback_title: String) -> Result<(Vec<Post>, String), &'static str> {
 	// Send a request to the url, receive JSON in response
 	let req = request(url).await;
@@ -130,7 +138,7 @@ pub async fn fetch_posts(url: String, fallback_title: String) -> Result<(Vec<Pos
 
 	for post in post_list {
 		let img = if val(post, "thumbnail").await.starts_with("https:/") {
-			format_url(val(post, "thumbnail").await.as_str()).await
+			format_url(val(post, "thumbnail").await).await
 		} else {
 			String::new()
 		};
