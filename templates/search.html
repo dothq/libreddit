@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "utils.html" as utils %}
+
+{% block title %}Libreddit: search results - {{ query }}{% endblock %}
+
+{% block content %}
+	<div id="column_one">
+		<form id="search_sort">
+			<input id="search" type="text" name="q" placeholder="Search" value="{{ query }}">
+			{% if sub != "" %}
+			<div id="inside">
+				<input type="checkbox" name="restrict_sr" id="restrict_sr" checked="checked" data-com.bitwarden.browser.user-edited="yes">
+				<label for="restrict_sr">in r/{{ sub }}</label>
+			</div>
+			{% endif %}
+			<select id="sort_options" name="sort">
+				{% call utils::options(sort.0, ["relevance", "hot", "top", "new", "comments"], "") %}
+			</select>{% if sort.0 != "new" %}<select id="timeframe" name="t"> 
+				{% call utils::options(sort.1, ["hour", "day", "week", "month", "year", "all"], "all") %}
+			</select>{% endif %}<input id="sort_submit" type="submit" value="&rarr;">
+		</form>
+		{% for post in posts %}
+		{% if post.title != "Comment" %}
+		<div class="post">
+			<div class="post_left">
+				<p class="post_score">{{ post.score }}</p>
+				{% if post.flags.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
+			</div>
+			<div class="post_right">
+				<p>
+					<b><a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a></b>
+					&bull; <a class="post_author" href="/u/{{ post.author }}">u/{{ post.author }}</a>
+					{% if post.author_flair.0 != "" %}
+						<small class="author_flair">{{ post.author_flair.0 }}</small>
+					{% endif %}
+					<span class="datetime" style="float: right;">{{ post.time }}</span>
+				</p>
+				<p class="post_title">
+					{% if post.flair.0 != "" %}
+					<small class="post_flair" style="color:{{ post.flair.2 }}; background:{{ post.flair.1 }}">{{ post.flair.0 }}</small>
+					{% endif %}
+					<a href="{{ post.url }}">{{ post.title }}</a>
+				</p>
+			</div>
+			<img class="post_thumbnail" src="{{ post.media }}">
+		</div><br>
+		{% else %}
+			<div class="comment">
+				<div class="comment_left">
+					<p class="comment_score">{{ post.score }}</p>
+					<div class="line"></div>
+				</div>
+				<details class="comment_right" open>
+					<summary class="comment_data">
+						<a class="comment_link" href="{{ post.url }}">COMMENT</a>
+						<span class="datetime">{{ post.time }}</span>
+					</summary>
+					<p class="comment_body">{{ post.body }}</p>
+				</details>
+			</div><br>
+		{% endif %}
+		{% endfor %}
+
+		<footer>
+			{% if ends.0 != "" %}
+			<a href="?sort={{ sort.0 }}{% if sort.0 == "top" %}&t={{ sort.1 }}{% endif %}&before={{ ends.0 }}">PREV</a>
+			{% endif %}
+
+			{% if ends.1 != "" %}
+			<a href="?sort={{ sort.0 }}{% if sort.0 == "top" %}&t={{ sort.1 }}{% endif %}&after={{ ends.1 }}">NEXT</a>
+			{% endif %}
+		</footer>
+	</div>
+{% endblock %}

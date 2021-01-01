@@ -1,64 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Libreddit: u/{{ user.name }}{% endblock %}
+{% import "utils.html" as utils %}
+
+{% block search %}
+	{% call utils::search("".to_owned(), "", "") %}
+{% endblock %}
+
+{% block title %}{{ user.name.replace("u/", "") }} (u/{{ user.name }}) - Libreddit{% endblock %}
 {% block body %}
 	<main style="max-width: 1000px;">
 		<div id="column_one">
-			<form>
-				<select id="sort" name="sort"> 
-					<option value="hot" {% if sort == "hot" %}selected{% endif %}>Hot</option>
-					<option value="new" {% if sort == "new" %}selected{% endif %}>New</option> 
-					<option value="top" {% if sort == "top" %}selected{% endif %}>Top</option> 
-				</select><input id="sort_submit" type="submit" value="&rarr;">
+			<form id="sort">
+				<select name="sort"> 
+					{% call utils::options(sort.0, ["hot", "new", "top"], "") %}
+				</select>{% if sort.0 == "top" %}<select id="timeframe" name="t"> 
+					{% call utils::options(sort.1, ["hour", "day", "week", "month", "year", "all"], "all") %}
+				</select>{% endif %}<input id="sort_submit" type="submit" value="&rarr;">
 			</form>
 			{% for post in posts %}
 			{% if post.title != "Comment" %}
 			<div class='post'>
 				<div class="post_left">
-					<h3 class="post_score">{{ post.score }}</h3>
-					{% if post.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
+					<p class="post_score">{{ post.score }}</p>
+					{% if post.flags.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
 				</div>
 				<div class="post_right">
-					<h4>
+					<p>
 						<b><a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a></b>
 						&bull; <a class="post_author" href="/u/{{ post.author }}">u/{{ post.author }}</a>
 						{% if post.author_flair.0 != "" %}
 							<small class="author_flair">{{ post.author_flair.0 }}</small>
 						{% endif %}
 						<span class="datetime" style="float: right;">{{ post.time }}</span>
-					</h4>
-					<h3 class="post_title">
+					</p>
+					<p class="post_title">
 						{% if post.flair.0 == "Comment" %}
 						{% else if post.flair.0 == "" %}
 						{% else %}
 							<small class="post_flair" style="color:{{ post.flair.2 }}; background:{{ post.flair.1 }}">{{ post.flair.0 }}</small>
 						{% endif %}
 						<a href="{{ post.url }}">{{ post.title }}</a>
-					</h3>
+					</p>
 				</div>
 				<img class="post_thumbnail" src="{{ post.media }}">
 			</div><br>
 			{% else %}
 			<div class="comment">
 				<div class="comment_left">
-					<h3 class="comment_score">{{ post.score }}</h3>
+					<p class="comment_score">{{ post.score }}</p>
+					<div class="line"></div>
 				</div>
-				<div class="comment_right">
-					<h4>
-						COMMENT
+				<details class="comment_right" open>
+					<summary class="comment_data">
+						<a class="comment_link" href="{{ post.url }}">COMMENT</a>
 						<span class="datetime">{{ post.time }}</span>
-					</h4>
-					<h4 class="comment_body">{{ post.body }}</h4>
-				</div>
+					</summary>
+					<p class="comment_body">{{ post.body }}</p>
+				</details>
 			</div><br>
 			{% endif %}
 			{% endfor %}
+			<footer>
+				{% if ends.0 != "" %}
+				<a href="?sort={{ sort.0 }}&before={{ ends.0 }}">PREV</a>
+				{% endif %}
+
+				{% if ends.1 != "" %}
+				<a href="?sort={{ sort.0 }}&after={{ ends.1 }}">NEXT</a>
+				{% endif %}
+			</footer>
 		</div>
 		<aside>
-			<div class="user">
-				<img class="user_icon" src="{{ user.icon }}">
-				<h2 class="user_name">u/{{ user.name }}</h2>
-				<div class="user_description">{{ user.description }}</div>
-				<div class="user_details">
+			<div id="user">
+				<img id="user_icon" src="{{ user.icon }}">
+				<p id="user_title">{{ user.title }}</p>
+				<p id="user_name">u/{{ user.name }}</p>
+				<div id="user_description">{{ user.description }}</div>
+				<div id="user_details">
 					<label>Karma</label>
 					<label>Created</label>
 					<div>{{ user.karma }}</div>

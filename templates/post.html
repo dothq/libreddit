@@ -1,5 +1,13 @@
 {% extends "base.html" %}
+{% import "utils.html" as utils %}
+
 {% block title %}{{ post.title }} - r/{{ post.community }}{% endblock %}
+
+{% block search %}
+	{% call utils::search(["/r/", post.community.as_str()].concat(), "") %}
+{% endblock %}
+
+{% block root %}/r/{{ post.community }}{% endblock %}{% block location %}r/{{ post.community }}{% endblock %}
 {% block head %}
 	{% call super() %}
 	<meta name="author" content="u/{{ post.author }}">
@@ -9,7 +17,7 @@
 
 <div id="{{ item.id }}" class="comment">
 	<div class="comment_left">
-		<h3 class="comment_score">{{ item.score }}</h3>
+		<p class="comment_score">{{ item.score }}</p>
 		<div class="line"></div>
 	</div>
 	<details class="comment_right" open>
@@ -19,7 +27,7 @@
 			{% endif %}
 			&bull; <span class="datetime">{{ item.time }}</span>
 		</summary>
-		<h4 class="comment_body">{{ item.body }}</h4>
+		<p class="comment_body">{{ item.body }}</p>
 
 {%- endmacro %}
 
@@ -27,11 +35,11 @@
 	<div id="column_one">
 		<div class="post highlighted">
 			<div class="post_left">
-				<h3 class="post_score">{{ post.score }}</h3>
-				{% if post.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
+				<p class="post_score">{{ post.score }}</p>
+				{% if post.flags.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
 			</div>
 			<div class="post_right">
-				<h4>
+				<p>
 					<b><a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a></b>
 					&bull;
 					<a class="post_author" href="/u/{{ post.author }}">u/{{ post.author }}</a>
@@ -39,7 +47,7 @@
 						<small class="author_flair">{{ post.author_flair.0 }}</small>
 					{% endif %}
 					<span class="datetime">{{ post.time }}</span>
-				</h4>
+				</p>
 				<a href="{{ post.url }}" class="post_title">
 					{{ post.title }}
 					{% if post.flair.0 != "" %}
@@ -53,16 +61,12 @@
 				{% else if post.post_type == "link" %}
 				<a id="post_url" href="{{ post.media }}">{{ post.media }}</a>
 				{% endif %}
-				<h4 class="post_body">{{ post.body }}</h4>
+				<div class="post_body">{{ post.body }}</div>
 			</div>
 		</div>
-		<form>
-			<select id="sort" name="sort"> 
-				<option value="confidence" {% if sort == "confidence" %}selected{% endif %}>Best</option> 
-				<option value="top" {% if sort == "top" %}selected{% endif %}>Top</option> 
-				<option value="new" {% if sort == "new" %}selected{% endif %}>New</option> 
-				<option value="controversial" {% if sort == "controversial" %}selected{% endif %}>Controversial</option> 
-				<option value="old" {% if sort == "old" %}selected{% endif %}>Old</option>
+		<form id="sort">
+			<select name="sort"> 
+				{% call utils::options(sort, ["confidence", "top", "new", "controversial", "old"], "") %}
 			</select><input id="sort_submit" type="submit" value="&rarr;">
 		</form>
 
