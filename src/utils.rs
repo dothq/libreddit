@@ -1,8 +1,11 @@
 //
 // CRATES
 //
+use actix_web::{http::StatusCode, HttpResponse, Result};
+use askama::Template;
 use chrono::{TimeZone, Utc};
 use serde_json::{from_str, Value};
+use url::Url;
 // use surf::{client, get, middleware::Redirect};
 
 #[cfg(feature = "proxy")]
@@ -13,6 +16,11 @@ use base64::encode;
 //
 // Post flair with text, background color and foreground color
 pub struct Flair(pub String, pub String, pub String);
+// Post flags with nsfw and stickied
+pub struct Flags {
+	pub nsfw: bool,
+	pub stickied: bool,
+}
 
 // Post containing content, metadata and media
 pub struct Post {
@@ -25,7 +33,7 @@ pub struct Post {
 	pub score: String,
 	pub post_type: String,
 	pub flair: Flair,
-	pub nsfw: bool,
+	pub flags: Flags,
 	pub media: String,
 	pub time: String,
 }
@@ -44,6 +52,7 @@ pub struct Comment {
 // User struct containing metadata about user
 pub struct User {
 	pub name: String,
+	pub title: String,
 	pub icon: String,
 	pub karma: i64,
 	pub created: String,
@@ -51,11 +60,13 @@ pub struct User {
 	pub description: String,
 }
 
+#[derive(Default)]
 // Subreddit struct containing metadata about community
 pub struct Subreddit {
 	pub name: String,
 	pub title: String,
 	pub description: String,
+	pub info: String,
 	pub icon: String,
 	pub members: String,
 	pub active: String,
@@ -64,13 +75,15 @@ pub struct Subreddit {
 // Parser for query params, used in sorting (eg. /r/rust/?sort=hot)
 #[derive(serde::Deserialize)]
 pub struct Params {
+	pub t: Option<String>,
+	pub q: Option<String>,
 	pub sort: Option<String>,
 	pub after: Option<String>,
 	pub before: Option<String>,
 }
 
 // Error template
-#[derive(askama::Template)]
+#[derive(Template)]
 #[template(path = "error.html", escape = "none")]
 pub struct ErrorTemplate {
 	pub message: String,
@@ -79,6 +92,13 @@ pub struct ErrorTemplate {
 //
 // FORMATTING
 //
+
+// Grab a query param from a url
+pub async fn param(path: &String, value: &str) -> String {
+	let url = Url::parse(format!("https://reddit.com/{}", path).as_str()).unwrap();
+	let pairs: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+	pairs.get(value).unwrap_or(&String::new()).to_owned()
+}
 
 // Direct urls to proxy if proxy is enabled
 pub async fn format_url(url: String) -> String {
@@ -119,9 +139,9 @@ pub async fn nested_val(j: &serde_json::Value, n: &str, k: &str) -> String {
 }
 
 // Fetch posts of a user or subreddit
-pub async fn fetch_posts(url: String, fallback_title: String) -> Result<(Vec<Post>, String), &'static str> {
+pub async fn fetch_posts(path: String, fallback_title: String) -> Result<(Vec<Post>, String), &'static str> {
 	// Send a request to the url, receive JSON in response
-	let req = request(url).await;
+	let req = request(path.clone()).await;
 
 	// If the Reddit API returns an error, exit this function
 	if req.is_err() {
@@ -149,7 +169,7 @@ pub async fn fetch_posts(url: String, fallback_title: String) -> Result<(Vec<Pos
 		posts.push(Post {
 			title: if title.is_empty() { fallback_title.to_owned() } else { title },
 			community: val(post, "subreddit").await,
-			body: val(post, "body").await,
+			body: val(post, "body_html").await,
 			author: val(post, "author").await,
 			author_flair: Flair(
 				val(post, "author_flair_text").await,
@@ -168,7 +188,10 @@ pub async fn fetch_posts(url: String, fallback_title: String) -> Result<(Vec<Pos
 					"white".to_string()
 				},
 			),
-			nsfw: post["data"]["over_18"].as_bool().unwrap_or(false),
+			flags: Flags {
+				nsfw: post["data"]["over_18"].as_bool().unwrap_or(false),
+				stickied: post["data"]["stickied"].as_bool().unwrap_or(false),
+			},
 			url: val(post, "permalink").await,
 			time: Utc.timestamp(unix_time, 0).format("%b %e '%y").to_string(),
 		});
@@ -181,9 +204,15 @@ pub async fn fetch_posts(url: String, fallback_title: String) -> Result<(Vec<Pos
 // NETWORKING
 //
 
+pub async fn error(message: String) -> Result<HttpResponse> {
+	let msg = if message.is_empty() { "Page not found".to_string() } else { message };
+	let body = ErrorTemplate { message: msg }.render().unwrap();
+	Ok(HttpResponse::Ok().status(StatusCode::NOT_FOUND).content_type("text/html").body(body))
+}
+
 // Make a request to a Reddit API and parse the JSON response
-pub async fn request(mut url: String) -> Result<serde_json::Value, &'static str> {
-	url = format!("https://www.reddit.com/{}", url);
+pub async fn request(path: String) -> Result<serde_json::Value, &'static str> {
+	let url = format!("https://www.reddit.com/{}", path);
 
 	// --- actix-web::client ---
 	// let client = actix_web::client::Client::default();
