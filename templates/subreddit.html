@@ -17,67 +17,101 @@
 			<form id="sort">
 				<div id="sort_options">
 					{% if sub.name.is_empty() %}
-						{% call utils::sort("", ["hot", "new", "top", "rising"], sort.0) %}
+						{% call utils::sort("", ["hot", "new", "top", "rising", "controversial"], sort.0) %}
 					{% else %}
-						{% call utils::sort(["/r/", sub.name.as_str()].concat(), ["hot", "new", "top", "rising"], sort.0) %}
+						{% call utils::sort(["/r/", sub.name.as_str()].concat(), ["hot", "new", "top", "rising", "controversial"], sort.0) %}
 					{% endif %}
 				</div>
-				{% if sort.0 == "top" %}<select id="timeframe" name="t"> 
+				{% if sort.0 == "top" || sort.0 == "controversial" %}<select id="timeframe" name="t" title="Timeframe"> 
 					{% call utils::options(sort.1, ["hour", "day", "week", "month", "year", "all"], "day") %}
-					<input id="sort_submit" type="submit" value="&rarr;">
-				</select>{% endif %}
+				</select>
+				<button id="sort_submit" class="submit">
+					<svg width="15" viewBox="0 0 110 100" fill="none" stroke-width="10" stroke-linecap="round">
+						<path d="M20 50 H100" />
+						<path d="M75 15 L100 50 L75 85" />
+						&rarr;
+					</svg>
+				</button>
+				{% endif %}
 			</form>
+
+			<div id="posts">
 			{% for post in posts %}
-			<div class="post {% if post.flags.stickied %}stickied{% endif %}">
-				<div class="post_left">
-					<p class="post_score">{{ post.score }}</p>
-					{% if post.flags.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
+			{% if !(post.flags.nsfw && prefs.hide_nsfw == "on") %}
+			<hr class="sep" />
+			<div class="post {% if post.flags.stickied %}stickied{% endif %}">	
+				<p class="post_header">
+					<a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a>
+					<span class="dot">&bull;</span>
+					<a class="post_author" href="/u/{{ post.author.name }}">u/{{ post.author.name }}</a>
+					<span class="dot">&bull;</span>
+					<span class="created" title="{{ post.created }}">{{ post.rel_time }}</span>
+				</p>
+				<p class="post_title">
+					{% if post.flair.flair_parts.len() > 0 %}
+					<small class="post_flair" style="color:{{ post.flair.foreground_color }}; background:{{ post.flair.background_color }};">{% call utils::render_flair(post.flair.flair_parts) %}</small>
+					{% endif %}
+					<a href="{{ post.permalink }}">{{ post.title }}</a>{% if post.flags.nsfw %} <small class="nsfw">NSFW</small>{% endif %}
+				</p>
+				<!-- POST MEDIA/THUMBNAIL -->
+				{% if (prefs.layout.is_empty() || prefs.layout == "card") && post.post_type == "image" %}
+				<img class="post_media" alt="Post image" width="{{ post.media.width }}px" height="{{ post.media.height }}px" src="{{ post.media.url }}"/>
+				{% else if post.post_type != "self" %}
+				<a class="post_thumbnail {% if post.thumbnail.url.is_empty() %}no_thumbnail{% endif %}" href="{% if post.post_type == "link" %}{{ post.media.url }}{% else %}{{ post.permalink }}{% endif %}">
+					{% if post.thumbnail.url.is_empty() %}
+						<svg viewBox="0 0 100 106" width="140" height="53" xmlns="http://www.w3.org/2000/svg">
+							<title>Thumbnail</title>
+							<path d="M35,15h-15a10,10 0,0,0 0,20h25a10,10 0,0,0 10,-10m-12.5,0a10, 10 0,0,1 10, -10h25a10,10 0,0,1 0,20h-15" fill="none" stroke-width="5" stroke-linecap="round"/>
+						</svg>
+					{% else %}
+						<img src="{{ post.thumbnail.url }}" alt="Thumbnail" width="{{ post.thumbnail.width }}px" height="{{ post.thumbnail.height }}px">
+					{% endif %}
+					<span>{% if post.post_type == "link" %}{{ post.domain }}{% else %}{{ post.post_type }}{% endif %}</span>
+				</a>
+				{% endif %}
+
+				<div class="post_score">{{ post.score }}<span class="label"> Upvotes</span></div>
+				<div class="post_footer">
+					<a href="{{ post.permalink }}" class="post_comments">{{ post.comments }} Comments</a>
 				</div>
-				<div class="post_right">
-					<p>
-						<b><a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a></b>
-						&bull; <a class="post_author" href="/u/{{ post.author }}">u/{{ post.author }}</a>
-						{% if post.author_flair.0 != "" %}
-							<small class="author_flair">{{ post.author_flair.0 }}</small>
-						{% endif %}
-						<span class="datetime">{{ post.time }}</span>
-					</p>
-					<p class="post_title">
-						{% if post.flair.0 != "" %}
-						<small class="post_flair" style="color:{{ post.flair.2 }}; background:{{ post.flair.1 }}">{{ post.flair.0 }}</small>
-						{% endif %}
-						<a href="{{ post.url }}">{{ post.title }}</a>
-					</p>
-				</div>
-				<img class="post_thumbnail" src="{{ post.media }}">
-			</div><br>
+			</div>
+			{% endif %}
 			{% endfor %}
+			</div>
 
 			<footer>
 				{% if ends.0 != "" %}
-				<a href="?sort={{ sort.0 }}&before={{ ends.0 }}">PREV</a>
+				<a href="?sort={{ sort.0 }}&t={{ sort.1 }}&before={{ ends.0 }}">PREV</a>
 				{% endif %}
 
 				{% if ends.1 != "" %}
-				<a href="?sort={{ sort.0 }}&after={{ ends.1 }}">NEXT</a>
+				<a href="?sort={{ sort.0 }}&t={{ sort.1 }}&after={{ ends.1 }}">NEXT</a>
 				{% endif %}
 			</footer>
 		</div>
-		{% if sub.name != "" %}
+		{% if sub.name != "" && !sub.name.contains("+") %}
 		<aside>
-			<div id="subreddit">
-				<img id="subreddit_icon" src="{{ sub.icon }}">
-				<p id="subreddit_title">{{ sub.title }}</p>
-				<p id="subreddit_name">r/{{ sub.name }}</p>
-				<p id="subreddit_description">{{ sub.description }}</p>
-				<div id="subreddit_details">
-					<label>Members</label>
-					<label>Active</label>
-					<div>{{ sub.members }}</div>
-					<div>{{ sub.active }}</div>
+			<div class="panel" id="subreddit">
+				{% if sub.wiki %}
+				<div id="top">
+					<div>Posts</div>
+					<a href="/r/{{ sub.name }}/wiki/index">Wiki</a>
+				</div>
+				{% endif %}
+				<div id="sub_meta">
+					<img id="sub_icon" src="{{ sub.icon }}" alt="Icon for r/{{ sub.name }}">
+					<p id="sub_title">{{ sub.title }}</p>
+					<p id="sub_name">r/{{ sub.name }}</p>
+					<p id="sub_description">{{ sub.description }}</p>
+					<div id="sub_details">
+						<label>Members</label>
+						<label>Active</label>
+						<div>{{ sub.members }}</div>
+						<div>{{ sub.active }}</div>
+					</div>
 				</div>
 			</div>
-			<details id="sidebar">
+			<details class="panel" id="sidebar">
 				<summary id="sidebar_label">Sidebar</summary>
 				<div id="sidebar_contents">{{ sub.info }}</div>
 			</details>

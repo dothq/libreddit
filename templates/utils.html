@@ -16,13 +16,26 @@
 
 {% macro search(root, search) -%}
 <form action="{% if root != "/r/" && !root.is_empty() %}{{ root }}{% endif %}/search/" id="searchbox">
-	<input id="search" type="text" name="q" placeholder="Search" value="{{ search }}">
+	<input id="search" type="text" name="q" placeholder="Search" title="Search libreddit" value="{{ search }}">
 	{% if root != "/r/" && !root.is_empty() %}
 	<div id="inside">
-		<input type="checkbox" name="restrict_sr" id="restrict_sr" checked="checked" data-com.bitwarden.browser.user-edited="yes">
-		<label for="restrict_sr">in {{ root }}</label>
+		<input type="checkbox" name="restrict_sr" id="restrict_sr">
+		<label for="restrict_sr" class="search_label">in {{ root }}</label>
 	</div>
 	{% endif %}
-	<input type="submit" value="&rarr;">
+	<button class="submit">
+		<svg width="15" viewBox="0 0 110 100" fill="none" stroke-width="10" stroke-linecap="round">
+			<path d="M20 50 H100" />
+			<path d="M75 15 L100 50 L75 85" />
+			&rarr;
+		</svg>
+	</button>
 </form>
+{%- endmacro %}
+
+{% macro render_flair(flair) -%}
+{% for flair_part in flair %}
+	{% if flair_part.flair_part_type == "emoji" %}<span class="emoji" style="background-image:url('{{ flair_part.value }}');"></span>
+	{% else if flair_part.flair_part_type == "text" %}<span>{{ flair_part.value }}</span>{% endif %}
+{% endfor %}
 {%- endmacro %}

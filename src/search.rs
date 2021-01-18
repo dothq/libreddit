@@ -1,47 +1,98 @@
 // CRATES
-use crate::utils::{error, fetch_posts, param, Post};
-use actix_web::{HttpRequest, HttpResponse, Result};
+use crate::utils::{error, fetch_posts, param, prefs, request, val, Post, Preferences};
+use actix_web::{HttpRequest, HttpResponse};
 use askama::Template;
 
 // STRUCTS
+struct SearchParams {
+	q: String,
+	sort: String,
+	t: String,
+	before: String,
+	after: String,
+	restrict_sr: String,
+}
+
+// STRUCTS
+struct Subreddit {
+	name: String,
+	url: String,
+	description: String,
+	subscribers: i64,
+}
+
 #[derive(Template)]
-#[allow(dead_code)]
 #[template(path = "search.html", escape = "none")]
 struct SearchTemplate {
 	posts: Vec<Post>,
-	query: String,
+	subreddits: Vec<Subreddit>,
 	sub: String,
-	sort: (String, String),
-	ends: (String, String),
+	params: SearchParams,
+	prefs: Preferences,
 }
 
 // SERVICES
-pub async fn find(req: HttpRequest) -> Result<HttpResponse> {
+pub async fn find(req: HttpRequest) -> HttpResponse {
 	let path = format!("{}.json?{}", req.path(), req.query_string());
-	let q = param(&path, "q").await;
-	let sort = if param(&path, "sort").await.is_empty() {
-		"relevance".to_string()
-	} else {
-		param(&path, "sort").await
-	};
 	let sub = req.match_info().get("sub").unwrap_or("").to_string();
 
-	let posts = fetch_posts(path.clone(), String::new()).await;
-
-	if posts.is_err() {
-		error(posts.err().unwrap().to_string()).await
+	let sort = if param(&path, "sort").is_empty() {
+		"relevance".to_string()
 	} else {
-		let items = posts.unwrap();
+		param(&path, "sort")
+	};
 
-		let s = SearchTemplate {
-			posts: items.0,
-			query: q,
-			sub: sub,
-			sort: (sort, param(&path, "t").await),
-			ends: (param(&path, "after").await, items.1),
+	let subreddits = if param(&path, "restrict_sr").is_empty() {
+		search_subreddits(param(&path, "q")).await
+	} else {
+		Vec::new()
+	};
+
+	match fetch_posts(&path, String::new()).await {
+		Ok((posts, after)) => HttpResponse::Ok().content_type("text/html").body(
+			SearchTemplate {
+				posts,
+				subreddits,
+				sub,
+				params: SearchParams {
+					q: param(&path, "q"),
+					sort,
+					t: param(&path, "t"),
+					before: param(&path, "after"),
+					after,
+					restrict_sr: param(&path, "restrict_sr"),
+				},
+				prefs: prefs(req),
+			}
+			.render()
+			.unwrap(),
+		),
+		Err(msg) => error(msg).await,
+	}
+}
+
+async fn search_subreddits(q: String) -> Vec<Subreddit> {
+	let subreddit_search_path = format!("/subreddits/search.json?q={}&limit=3", q.replace(' ', "+"));
+
+	// Send a request to the url
+	match request(&subreddit_search_path).await {
+		// If success, receive JSON in response
+		Ok(response) => {
+			match response["data"]["children"].as_array() {
+				// For each subreddit from subreddit list
+				Some(list) => list
+					.iter()
+					.map(|subreddit| Subreddit {
+						name: val(subreddit, "display_name_prefixed"),
+						url: val(subreddit, "url"),
+						description: val(subreddit, "public_description"),
+						subscribers: subreddit["data"]["subscribers"].as_u64().unwrap_or_default() as i64,
+					})
+					.collect::<Vec<Subreddit>>(),
+				_ => Vec::new(),
+			}
 		}
-		.render()
-		.unwrap();
-		Ok(HttpResponse::Ok().content_type("text/html").body(s))
+		// If the Reddit API returns an error, exit this function
+		_ => Vec::new(),
 	}
 }

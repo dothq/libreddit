@@ -10,89 +10,116 @@
 {% block root %}/r/{{ post.community }}{% endblock %}{% block location %}r/{{ post.community }}{% endblock %}
 {% block head %}
 	{% call super() %}
-	<meta name="author" content="u/{{ post.author }}">
+	<meta name="author" content="u/{{ post.author.name }}">
 {% endblock %}
 
+<!-- OPEN COMMENT MACRO -->
 {% macro comment(item) -%}
-
 <div id="{{ item.id }}" class="comment">
 	<div class="comment_left">
 		<p class="comment_score">{{ item.score }}</p>
 		<div class="line"></div>
 	</div>
 	<details class="comment_right" open>
-		<summary class="comment_data"><a class="comment_author {% if item.author == post.author %}op{% endif %}" href="/u/{{ item.author }}">u/{{ item.author }}</a>
-			{% if item.flair.0 != "" %}
-				<small class="author_flair">{{ item.flair.0 }}</small>
+		<summary class="comment_data">
+			<a class="comment_author {{ item.author.distinguished }} {% if item.author.name == post.author.name %}op{% endif %}" href="/u/{{ item.author.name }}">u/{{ item.author.name }}</a>
+			{% if item.author.flair.flair_parts.len() > 0 %}
+				<small class="author_flair">{% call utils::render_flair(item.author.flair.flair_parts) %}</small>
 			{% endif %}
-			&bull; <span class="datetime">{{ item.time }}</span>
+			<span class="created" title="{{ post.created }}">{{ item.rel_time }}</span>
 		</summary>
-		<p class="comment_body">{{ item.body }}</p>
-
+		<div class="comment_body">{{ item.body }}</div>
 {%- endmacro %}
+
+<!-- CLOSE COMMENT MACRO -->
+{% macro close() %}
+</details></div>
+{% endmacro %}
 
 {% block content %}
 	<div id="column_one">
+
+		<!-- POST CONTENT -->
 		<div class="post highlighted">
-			<div class="post_left">
-				<p class="post_score">{{ post.score }}</p>
-				{% if post.flags.nsfw %}<div class="nsfw">NSFW</div>{% endif %}
-			</div>
-			<div class="post_right">
-				<p>
-					<b><a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a></b>
-					&bull;
-					<a class="post_author" href="/u/{{ post.author }}">u/{{ post.author }}</a>
-					{% if post.author_flair.0 != "" %}
-						<small class="author_flair">{{ post.author_flair.0 }}</small>
-					{% endif %}
-					<span class="datetime">{{ post.time }}</span>
-				</p>
-				<a href="{{ post.url }}" class="post_title">
-					{{ post.title }}
-					{% if post.flair.0 != "" %}
-						<small class="post_flair" style="color:{{ post.flair.2 }}; background:{{ post.flair.1 }}">{{ post.flair.0 }}</small>
-					{% endif %}
-				</a>
-				{% if post.post_type == "image" %}
-				<img class="post_media" src="{{ post.media }}"/>
-				{% else if post.post_type == "video" %}
-				<video class="post_media" src="{{ post.media }}" controls autoplay loop>
-				{% else if post.post_type == "link" %}
-				<a id="post_url" href="{{ post.media }}">{{ post.media }}</a>
+			
+			<p class="post_header">
+				<a class="post_subreddit" href="/r/{{ post.community }}">r/{{ post.community }}</a>
+				<span class="dot">&bull;</span>
+				<a class="post_author" href="/u/{{ post.author.name }}">u/{{ post.author.name }}</a>
+				{% if post.author.flair.flair_parts.len() > 0 %}
+					<small class="author_flair">{% call utils::render_flair(post.author.flair.flair_parts) %}</small>
 				{% endif %}
-				<div class="post_body">{{ post.body }}</div>
+				<span class="dot">&bull;</span>
+				<span class="created" title="{{ post.created }}">{{ post.rel_time }}</span>
+			</p>
+			<p class="post_title">
+				<a href="{{ post.permalink }}">{{ post.title }}</a>
+				{% if post.flair.flair_parts.len() > 0 %}
+					<small class="post_flair" style="color:{{ post.flair.foreground_color }}; background:{{ post.flair.background_color }};">{% call utils::render_flair(post.flair.flair_parts) %}</small>
+				{% endif %}
+				{% if post.flags.nsfw %} <small class="nsfw">NSFW</small>{% endif %}
+			</p>
+
+			<!-- POST MEDIA -->
+			{% if post.post_type == "image" %}
+			<img class="post_media" alt="Post image" width="{{ post.media.width }}px" height="{{ post.media.height}}px" src="{{ post.media.url }}"/>
+			{% else if post.post_type == "video" || post.post_type == "gif" %}
+			<video class="post_media" src="{{ post.media.url }}" controls autoplay loop></video>
+			{% else if post.post_type == "link" %}
+			<a id="post_url" href="{{ post.media.url }}">{{ post.media.url }}</a>
+			{% endif %}
+
+			<!-- POST BODY -->
+			<div class="post_body">{{ post.body }}</div>
+			<div class="post_score">{{ post.score }}<span class="label"> Upvotes</span></div>
+			<div class="post_footer">
+				
+				<ul id="post_links">
+					<li><a href="/{{ post.id }}">permalink</a></li>
+					<li><a href="https://reddit.com/{{ post.id }}">reddit</a></li>
+				</ul>
+				<p>{{ post.upvote_ratio }}% Upvoted</p>
 			</div>
+
 		</div>
+
+		<!-- SORT FORM -->
 		<form id="sort">
-			<select name="sort"> 
-				{% call utils::options(sort, ["confidence", "top", "new", "controversial", "old"], "") %}
-			</select><input id="sort_submit" type="submit" value="&rarr;">
+			<select name="sort" title="Sort comments by"> 
+				{% call utils::options(sort, ["confidence", "top", "new", "controversial", "old"], "confidence") %}
+			</select><button id="sort_submit" class="submit">
+				<svg width="15" viewBox="0 0 110 100" fill="none" stroke-width="10" stroke-linecap="round">
+					<path d="M20 50 H100" />
+					<path d="M75 15 L100 50 L75 85" />
+					&rarr;
+				</svg>
+			</button>
 		</form>
 
+		<!-- COMMENTS -->
 		{% for c in comments -%}
-			<div class="thread">
-				{% call comment(c) %}
-				<div class="replies">
-					{% for reply1 in c.replies %}
-						{% call comment(reply1) %}
-						<div class="replies">
-							{% for reply2 in reply1.replies %}
-								{% call comment(reply2) %}
-								<div class="replies">
-									{% for reply3 in reply2.replies %}
-										{% call comment(reply3) %}
-										{% if reply3.replies.len() > 0 %}
-											<a class="deeper_replies" href="{{ post.url }}{{ reply3.id }}">&rarr; More replies</a>
-										{% endif %}
-										</details></div>
-									{% endfor %}
-								</div></details></div>
-							{% endfor %}
-						</div></details></div>
+		<div class="thread">
+			<!-- EACH COMMENT -->
+			{% call comment(c) %}
+			<blockquote class="replies">{% for reply1 in c.replies %}{% call comment(reply1) %}
+				<!-- FIRST-LEVEL REPLIES -->
+				<blockquote class="replies">{% for reply2 in reply1.replies %}{% call comment(reply2) %}
+					<!-- SECOND-LEVEL REPLIES -->
+					<blockquote class="replies">{% for reply3 in reply2.replies %}{% call comment(reply3) %}
+						<!-- THIRD-LEVEL REPLIES -->
+						{% if reply3.replies.len() > 0 %}
+							<!-- LINK TO CONTINUE REPLIES -->
+							<a class="deeper_replies" href="{{ post.permalink }}{{ reply3.id }}">&rarr; More replies</a>
+						{% endif %}
+						{% call close() %}
 					{% endfor %}
-				</div></details></div>
-			</div>
+					</blockquote>{% call close() %}
+				{% endfor %}
+				</blockquote>{% call close() %}
+			{% endfor %}
+			</blockquote>{% call close() %}
+		</div>
 		{%- endfor %}
+
 	</div>
 {% endblock %}

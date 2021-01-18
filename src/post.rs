@@ -1,11 +1,10 @@
 // CRATES
-use crate::utils::{error, format_num, format_url, param, request, val, Comment, Flags, Flair, Post};
-use actix_web::{HttpRequest, HttpResponse, Result};
+use crate::utils::*;
+use actix_web::{HttpRequest, HttpResponse};
 
 use async_recursion::async_recursion;
 
 use askama::Template;
-use chrono::{TimeZone, Utc};
 
 // STRUCTS
 #[derive(Template)]
@@ -14,142 +13,170 @@ struct PostTemplate {
 	comments: Vec<Comment>,
 	post: Post,
 	sort: String,
+	prefs: Preferences,
 }
 
-pub async fn item(req: HttpRequest) -> Result<HttpResponse> {
-	let path = format!("{}.json?{}&raw_json=1", req.path(), req.query_string());
-	let sort = param(&path, "sort").await;
-	let id = req.match_info().get("id").unwrap_or("").to_string();
+pub async fn item(req: HttpRequest) -> HttpResponse {
+	// Build Reddit API path
+	let mut path: String = format!("{}.json?{}&raw_json=1", req.path(), req.query_string());
+
+	// Set sort to sort query parameter
+	let mut sort: String = param(&path, "sort");
+
+	// Grab default comment sort method from Cookies
+	let default_sort = cookie(&req, "comment_sort");
+
+	// If there's no sort query but there's a default sort, set sort to default_sort
+	if sort.is_empty() && !default_sort.is_empty() {
+		sort = default_sort;
+		path = format!("{}.json?{}&sort={}&raw_json=1", req.path(), req.query_string(), sort);
+	}
 
 	// Log the post ID being fetched in debug mode
 	#[cfg(debug_assertions)]
-	dbg!(&id);
+	dbg!(req.match_info().get("id").unwrap_or(""));
 
 	// Send a request to the url, receive JSON in response
-	let req = request(path.clone()).await;
-
-	// If the Reddit API returns an error, exit and send error page to user
-	if req.is_err() {
-		error(req.err().unwrap().to_string()).await
-	} else {
+	match request(&path).await {
 		// Otherwise, grab the JSON output from the request
-		let res = req.unwrap();
+		Ok(res) => {
+			// Parse the JSON into Post and Comment structs
+			let post = parse_post(&res[0]).await;
+			let comments = parse_comments(&res[1]).await;
 
-		// Parse the JSON into Post and Comment structs
-		let post = parse_post(res[0].clone()).await.unwrap();
-		let comments = parse_comments(res[1].clone()).await.unwrap();
-
-		// Use the Post and Comment structs to generate a website to show users
-		let s = PostTemplate { comments, post, sort }.render().unwrap();
-		Ok(HttpResponse::Ok().content_type("text/html").body(s))
+			// Use the Post and Comment structs to generate a website to show users
+			let s = PostTemplate {
+				comments,
+				post,
+				sort,
+				prefs: prefs(req),
+			}
+			.render()
+			.unwrap();
+			HttpResponse::Ok().content_type("text/html").body(s)
+		}
+		// If the Reddit API returns an error, exit and send error page to user
+		Err(msg) => error(msg).await,
 	}
 }
 
-// UTILITIES
-async fn media(data: &serde_json::Value) -> (String, String) {
-	let post_type: &str;
-	let url = if !data["preview"]["reddit_video_preview"]["fallback_url"].is_null() {
-		post_type = "video";
-		format_url(data["preview"]["reddit_video_preview"]["fallback_url"].as_str().unwrap().to_string()).await
-	} else if !data["secure_media"]["reddit_video"]["fallback_url"].is_null() {
-		post_type = "video";
-		format_url(data["secure_media"]["reddit_video"]["fallback_url"].as_str().unwrap().to_string()).await
-	} else if data["post_hint"].as_str().unwrap_or("") == "image" {
-		post_type = "image";
-		format_url(data["preview"]["images"][0]["source"]["url"].as_str().unwrap().to_string()).await
-	} else {
-		post_type = "link";
-		data["url"].as_str().unwrap().to_string()
-	};
-
-	(post_type.to_string(), url)
-}
-
 // POSTS
-async fn parse_post(json: serde_json::Value) -> Result<Post, &'static str> {
+async fn parse_post(json: &serde_json::Value) -> Post {
 	// Retrieve post (as opposed to comments) from JSON
-	let post_data: &serde_json::Value = &json["data"]["children"][0];
+	let post: &serde_json::Value = &json["data"]["children"][0];
 
 	// Grab UTC time as unix timestamp
-	let unix_time: i64 = post_data["data"]["created_utc"].as_f64().unwrap().round() as i64;
-	// Parse post score
-	let score = post_data["data"]["score"].as_i64().unwrap();
+	let (rel_time, created) = time(post["data"]["created_utc"].as_f64().unwrap_or_default());
+	// Parse post score and upvote ratio
+	let score = post["data"]["score"].as_i64().unwrap_or_default();
+	let ratio: f64 = post["data"]["upvote_ratio"].as_f64().unwrap_or(1.0) * 100.0;
 
 	// Determine the type of media along with the media URL
-	let media = media(&post_data["data"]).await;
+	let (post_type, media) = media(&post["data"]).await;
 
 	// Build a post using data parsed from Reddit post API
-	let post = Post {
-		title: val(post_data, "title").await,
-		community: val(post_data, "subreddit").await,
-		body: val(post_data, "selftext_html").await,
-		author: val(post_data, "author").await,
-		author_flair: Flair(
-			val(post_data, "author_flair_text").await,
-			val(post_data, "author_flair_background_color").await,
-			val(post_data, "author_flair_text_color").await,
-		),
-		url: val(post_data, "permalink").await,
+	Post {
+		id: val(post, "id"),
+		title: val(post, "title"),
+		community: val(post, "subreddit"),
+		body: rewrite_url(&val(post, "selftext_html")),
+		author: Author {
+			name: val(post, "author"),
+			flair: Flair {
+				flair_parts: parse_rich_flair(
+					val(post, "author_flair_type"),
+					post["data"]["author_flair_richtext"].as_array(),
+					post["data"]["author_flair_text"].as_str(),
+				),
+				background_color: val(post, "author_flair_background_color"),
+				foreground_color: val(post, "author_flair_text_color"),
+			},
+			distinguished: val(post, "distinguished"),
+		},
+		permalink: val(post, "permalink"),
 		score: format_num(score),
-		post_type: media.0,
-		flair: Flair(
-			val(post_data, "link_flair_text").await,
-			val(post_data, "link_flair_background_color").await,
-			if val(post_data, "link_flair_text_color").await == "dark" {
+		upvote_ratio: ratio as i64,
+		post_type,
+		media,
+		thumbnail: Media {
+			url: format_url(val(post, "thumbnail").as_str()),
+			width: post["data"]["thumbnail_width"].as_i64().unwrap_or_default(),
+			height: post["data"]["thumbnail_height"].as_i64().unwrap_or_default(),
+		},
+		flair: Flair {
+			flair_parts: parse_rich_flair(
+				val(post, "link_flair_type"),
+				post["data"]["link_flair_richtext"].as_array(),
+				post["data"]["link_flair_text"].as_str(),
+			),
+			background_color: val(post, "link_flair_background_color"),
+			foreground_color: if val(post, "link_flair_text_color") == "dark" {
 				"black".to_string()
 			} else {
 				"white".to_string()
 			},
-		),
-		flags: Flags {
-			nsfw: post_data["data"]["over_18"].as_bool().unwrap_or(false),
-			stickied: post_data["data"]["stickied"].as_bool().unwrap_or(false),
 		},
-		media: media.1,
-		time: Utc.timestamp(unix_time, 0).format("%b %e %Y %H:%M UTC").to_string(),
-	};
-
-	Ok(post)
+		flags: Flags {
+			nsfw: post["data"]["over_18"].as_bool().unwrap_or(false),
+			stickied: post["data"]["stickied"].as_bool().unwrap_or(false),
+		},
+		domain: val(post, "domain"),
+		rel_time,
+		created,
+		comments: format_num(post["data"]["num_comments"].as_i64().unwrap_or_default()),
+	}
 }
 
 // COMMENTS
 #[async_recursion]
-async fn parse_comments(json: serde_json::Value) -> Result<Vec<Comment>, &'static str> {
+async fn parse_comments(json: &serde_json::Value) -> Vec<Comment> {
 	// Separate the comment JSON into a Vector of comments
-	let comment_data = json["data"]["children"].as_array().unwrap();
+	let comment_data = match json["data"]["children"].as_array() {
+		Some(f) => f.to_owned(),
+		None => Vec::new(),
+	};
 
 	let mut comments: Vec<Comment> = Vec::new();
 
 	// For each comment, retrieve the values to build a Comment object
 	for comment in comment_data {
-		let unix_time: i64 = comment["data"]["created_utc"].as_f64().unwrap_or(0.0).round() as i64;
-		if unix_time == 0 {
+		let unix_time = comment["data"]["created_utc"].as_f64().unwrap_or_default();
+		if unix_time == 0.0 {
 			continue;
 		}
+		let (rel_time, created) = time(unix_time);
 
 		let score = comment["data"]["score"].as_i64().unwrap_or(0);
-		let body = val(comment, "body_html").await;
+		let body = rewrite_url(&val(&comment, "body_html"));
 
 		let replies: Vec<Comment> = if comment["data"]["replies"].is_object() {
-			parse_comments(comment["data"]["replies"].clone()).await.unwrap_or(Vec::new())
+			parse_comments(&comment["data"]["replies"]).await
 		} else {
 			Vec::new()
 		};
 
 		comments.push(Comment {
-			id: val(comment, "id").await,
-			body: body,
-			author: val(comment, "author").await,
+			id: val(&comment, "id"),
+			body,
+			author: Author {
+				name: val(&comment, "author"),
+				flair: Flair {
+					flair_parts: parse_rich_flair(
+						val(&comment, "author_flair_type"),
+						comment["data"]["author_flair_richtext"].as_array(),
+						comment["data"]["author_flair_text"].as_str(),
+					),
+					background_color: val(&comment, "author_flair_background_color"),
+					foreground_color: val(&comment, "author_flair_text_color"),
+				},
+				distinguished: val(&comment, "distinguished"),
+			},
 			score: format_num(score),
-			time: Utc.timestamp(unix_time, 0).format("%b %e %Y %H:%M UTC").to_string(),
-			replies: replies,
-			flair: Flair(
-				val(comment, "author_flair_text").await,
-				val(comment, "author_flair_background_color").await,
-				val(comment, "author_flair_text_color").await,
-			),
+			rel_time,
+			created,
+			replies,
 		});
 	}
 
-	Ok(comments)
+	comments
 }
